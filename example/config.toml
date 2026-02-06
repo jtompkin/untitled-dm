@@ -1,0 +1,15 @@
+[[commands]]
+name = "Xinit"
+command = "startx"
+
+[[commands]]
+name = "echo"
+command = "echo"
+args = ["Hi", "mom", "!"]
+
+[[commands]]
+name = "Nothing"
+
+[[commands]]
+name = "Print working directory"
+command = "pwd"
