@@ -9,7 +9,7 @@ buildGoModule {
     root = ../.;
     fileset = lib.fileset.difference ../. ../nix;
   };
-  vendorHash = "sha256-uwBJAqN4sIepiiJf9lCDumLqfKJEowQO2tOiSWD3Fig=";
+  vendorHash = "sha256-qrX55UC7IMOZS8yDB+JIf5fAatfsRaMl38T1rDKHSAg=";
   meta = {
     description = "An untitled display manager";
     homepage = "https://github.com/jtompkin/untitled-dm";

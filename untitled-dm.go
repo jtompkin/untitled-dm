@@ -12,6 +12,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+const version = "0.0.1"
+
 type (
 	// model implements tea.Model
 	model struct {
@@ -104,7 +106,7 @@ func (m model) View() string {
 		return fmt.Sprintf("\nCould not start selected option: %v\n\n%s", m.output.err, m.output.std)
 	}
 	b := new(strings.Builder)
-	b.WriteString("Where should we go?\nPress enter to confirm selection.\n\n")
+	fmt.Fprintf(b, "untitled-dm v%s\n\nWhat should we do?\nPress space to select. Press enter to confirm selection.\n\n", version)
 	for i, choice := range m.choices {
 		cursor := " "
 		if m.cursor == i {
@@ -144,15 +146,12 @@ func parseTomlConfig(f string) (conf config) {
 }
 
 func main() {
+	var versionFlag = flag.Bool("V", false, "Print program version and exit")
 	var confFlag = flag.String("c", "config.toml", "Path to configuration file")
 	flag.Parse()
-	if len(os.Getenv("DEBUG")) > 0 {
-		f, err := tea.LogToFile("debug.txt", "debug")
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		defer f.Close()
+	if *versionFlag {
+		fmt.Printf("%s v%s\n", os.Args[0], version)
+		os.Exit(0)
 	}
 	conf := parseTomlConfig(*confFlag)
 	m := model{

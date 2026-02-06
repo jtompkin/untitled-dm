@@ -8,8 +8,8 @@ command = "echo"
 args = ["Hi", "mom", "!"]
 
 [[commands]]
-name = "Nothing"
-
-[[commands]]
 name = "Print working directory"
 command = "pwd"
+
+[[commands]]
+name = "Nothing"
