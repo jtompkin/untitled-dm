@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -16,7 +15,7 @@ import (
 const version = "0.0.1"
 
 type (
-	// model implements tea.Model
+	// model implements [tea.Model]
 	model struct {
 		// choices is the list of choices that the user can choose from.
 		choices []string
@@ -29,26 +28,21 @@ type (
 			err error
 		}
 		// cursor is the index of the current cursor position in choices.
-		cursor int16
-		// selected is the index of selected item in choices. No items are selected if
-		// negative
-		selected int16
+		cursor int
+		// selected is the index of selected item in choices. No items are selected if negative
+		selected int
 	}
 	command struct {
-		// name is the file name of the command
-		name string
-		args []string
+		// Name is the string that is presented in the menu
+		Name string
+		// Command is the name of the program to be executed
+		Command string
+		// Args are passed to Command
+		Args []string
 	}
 	// config is the TOML structure of the configuration file
 	config struct {
-		Commands []struct {
-			// Name is the string that is presented in the menu
-			Name string
-			// Command is the file name to be run
-			Command string
-			// Args are passed to Command
-			Args []string
-		}
+		Commands []command
 	}
 	// ranMsg indicates that the command successfully completed
 	ranMsg struct{ output string }
@@ -79,12 +73,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "up", "k":
 			if m.cursor == 0 {
-				m.cursor = int16(len(m.choices) - 1)
+				m.cursor = len(m.choices) - 1
 			} else {
 				m.cursor--
 			}
 		case "down", "j":
-			if m.cursor == int16(len(m.choices)-1) {
+			if m.cursor == len(m.choices)-1 {
 				m.cursor = 0
 			} else {
 				m.cursor++
@@ -97,8 +91,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "enter":
 			var cmd *exec.Cmd
-			if c, ok := m.cmds[int(m.selected)]; ok {
-				cmd = exec.Command(c.name, c.args...)
+			if c, ok := m.cmds[m.selected]; ok {
+				cmd = exec.Command(c.Command, c.Args...)
 			}
 			return m, runShCmd(cmd)
 		}
@@ -110,13 +104,12 @@ func (m model) View() string {
 	b := new(strings.Builder)
 	fmt.Fprintf(b, "untitled-dm v%s\n\nWhat should we do?\nPress space to select. Press enter to confirm selection.\n\n", version)
 	for i, choice := range m.choices {
-		ii := int16(i)
 		cursor := " "
-		if m.cursor == ii {
+		if m.cursor == i {
 			cursor = ">"
 		}
 		checked := " "
-		if m.selected == ii {
+		if m.selected == i {
 			checked = "x"
 		}
 		fmt.Fprintf(b, "%s [%s] %s\n", cursor, checked, choice)
@@ -127,6 +120,16 @@ func (m model) View() string {
 	}
 	fmt.Fprintf(b, "\nPress q to quit.\n\n%s", tail)
 	return b.String()
+}
+
+func (m model) addCommands(commands []command, offset int) model {
+	for i, c := range commands {
+		m.choices[i+offset] = c.Name
+		if c.Command != "" {
+			m.cmds[i+offset] = c
+		}
+	}
+	return m
 }
 
 func runShCmd(cmd *exec.Cmd) tea.Cmd {
@@ -152,33 +155,29 @@ func parseTomlConfig(f string) (conf config) {
 	return conf
 }
 
-type int16Value int16
+type commandsValue []command
 
-func newInt16Value(val int16, p *int16) *int16Value {
-	*p = val
-	return (*int16Value)(p)
-}
+func (i *commandsValue) String() string { return fmt.Sprint(*i) }
 
-func (i *int16Value) Set(s string) error {
-	x, err := strconv.ParseInt(s, 0, 16)
-	*i = int16Value(x)
-	return err
-}
-
-func (i *int16Value) String() string {
-	return strconv.FormatInt(int64(*i), 10)
+func (i *commandsValue) Set(s string) error {
+	name, commandAndArgs, _ := strings.Cut(s, "=")
+	cmd, argsString, _ := strings.Cut(commandAndArgs, " ")
+	*i = append(*i, command{Name: name, Command: cmd, Args: strings.Split(argsString, " ")})
+	return nil
 }
 
 func getFlags() (flags struct {
 	version          bool
 	quitOnError      bool
 	confFile         string
-	defaultSelection int16
+	defaultSelection int
+	extraCommands    commandsValue
 }) {
 	flag.BoolVar(&flags.version, "V", false, "Print program version and exit")
 	flag.BoolVar(&flags.quitOnError, "q", false, "Quit on command error")
 	flag.StringVar(&flags.confFile, "c", "config.toml", "Path to configuration file")
-	flag.Var(newInt16Value(-1, &flags.defaultSelection), "d", "Index to default selection")
+	flag.IntVar(&flags.defaultSelection, "d", -1, "Default `index` for selection. No selection if negative")
+	flag.Var(&flags.extraCommands, "e", "Extra `command`s to include of the format:\nNAME=COMMAND ARGS...\nCan be provided multiple times")
 	flag.Parse()
 	return flags
 }
@@ -191,20 +190,11 @@ func main() {
 	}
 	conf := parseTomlConfig(flags.confFile)
 	m := model{
-		choices:     make([]string, len(conf.Commands)),
-		cmds:        make(map[int]command, len(conf.Commands)),
+		choices:     make([]string, len(conf.Commands)+len(flags.extraCommands)),
+		cmds:        make(map[int]command, len(conf.Commands)+len(flags.extraCommands)),
 		quitOnError: flags.quitOnError,
 		selected:    flags.defaultSelection,
-	}
-	for i, c := range conf.Commands {
-		m.choices[i] = c.Name
-		if c.Command != "" {
-			m.cmds[i] = command{
-				name: c.Command,
-				args: c.Args,
-			}
-		}
-	}
+	}.addCommands(flags.extraCommands, 0).addCommands(conf.Commands, len(flags.extraCommands))
 	p := tea.NewProgram(m)
 	_, err := p.Run()
 	if err != nil {
