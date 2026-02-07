@@ -29,10 +29,10 @@ type (
 			err error
 		}
 		// cursor is the index of the current cursor position in choices.
-		cursor int
+		cursor int16
 		// selected is the index of selected item in choices. No items are selected if
 		// negative
-		selected int
+		selected int16
 	}
 	command struct {
 		// name is the file name of the command
@@ -79,12 +79,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "up", "k":
 			if m.cursor == 0 {
-				m.cursor = len(m.choices) - 1
+				m.cursor = int16(len(m.choices) - 1)
 			} else {
 				m.cursor--
 			}
 		case "down", "j":
-			if m.cursor == len(m.choices)-1 {
+			if m.cursor == int16(len(m.choices)-1) {
 				m.cursor = 0
 			} else {
 				m.cursor++
@@ -97,7 +97,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "enter":
 			var cmd *exec.Cmd
-			if c, ok := m.cmds[m.selected]; ok {
+			if c, ok := m.cmds[int(m.selected)]; ok {
 				cmd = exec.Command(c.name, c.args...)
 			}
 			return m, runShCmd(cmd)
@@ -110,12 +110,13 @@ func (m model) View() string {
 	b := new(strings.Builder)
 	fmt.Fprintf(b, "untitled-dm v%s\n\nWhat should we do?\nPress space to select. Press enter to confirm selection.\n\n", version)
 	for i, choice := range m.choices {
+		ii := int16(i)
 		cursor := " "
-		if m.cursor == i {
+		if m.cursor == ii {
 			cursor = ">"
 		}
 		checked := " "
-		if m.selected == i {
+		if m.selected == ii {
 			checked = "x"
 		}
 		fmt.Fprintf(b, "%s [%s] %s\n", cursor, checked, choice)
@@ -151,15 +152,20 @@ func parseTomlConfig(f string) (conf config) {
 	return conf
 }
 
-type int16Var int16
+type int16Value int16
 
-func (i *int16Var) Set(s string) error {
-	x, err := strconv.ParseInt(s, 10, 16)
-	*i = int16Var(x)
+func newInt16Value(val int16, p *int16) *int16Value {
+	*p = val
+	return (*int16Value)(p)
+}
+
+func (i *int16Value) Set(s string) error {
+	x, err := strconv.ParseInt(s, 0, 16)
+	*i = int16Value(x)
 	return err
 }
 
-func (i *int16Var) String() string {
+func (i *int16Value) String() string {
 	return strconv.FormatInt(int64(*i), 10)
 }
 
@@ -167,14 +173,12 @@ func getFlags() (flags struct {
 	version          bool
 	quitOnError      bool
 	confFile         string
-	defaultSelection int
+	defaultSelection int16
 }) {
-	flags.defaultSelection = -1
 	flag.BoolVar(&flags.version, "V", false, "Print program version and exit")
 	flag.BoolVar(&flags.quitOnError, "q", false, "Quit on command error")
 	flag.StringVar(&flags.confFile, "c", "config.toml", "Path to configuration file")
-	flag.IntVar(&flags.defaultSelection, "d", -1, "Index to default selection. No selection if negative")
-	// flag.Var(&flags.defaultSelection, "d", "Index to default selection")
+	flag.Var(newInt16Value(-1, &flags.defaultSelection), "d", "Index to default selection")
 	flag.Parse()
 	return flags
 }
