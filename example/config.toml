@@ -13,3 +13,12 @@ command = "pwd"
 
 [[commands]]
 name = "Nothing"
+
+[[commands]]
+name = "fail"
+command = "false"
+
+[[commands]]
+name = "fail with output"
+command = "cat"
+args = ["--does-not-exist"]

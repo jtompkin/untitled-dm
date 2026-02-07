@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -20,7 +21,8 @@ type (
 		// choices is the list of choices that the user can choose from.
 		choices []string
 		// cmds maps indices in choices to executables to run.
-		cmds map[int]command
+		cmds        map[int]command
+		quitOnError bool
 		// output contains the combined standard streams of the command and any error that occurred
 		output struct {
 			std string
@@ -50,24 +52,27 @@ type (
 	}
 	// ranMsg indicates that the command successfully completed
 	ranMsg struct{ output string }
-	// errorMsg indicates that the command did not successfully complete
-	errorMsg struct {
-		output string
-		err    error
-	}
+	// errorMsg indicates that the command did not successfully complete. Implements error
+	errorMsg struct{ output string }
 )
+
+func (e errorMsg) Error() string { return e.output }
 
 func (m model) Init() tea.Cmd { return nil }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case ranMsg:
+		m.output.err = nil
 		m.output.std = msg.output
-		return m, tea.Quit
+		return m, nil
 	case errorMsg:
-		m.output.std = msg.output
-		m.output.err = msg.err
-		return m, tea.Quit
+		m.output.err = msg
+		var cmd tea.Cmd
+		if m.quitOnError {
+			cmd = tea.Quit
+		}
+		return m, cmd
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "q":
@@ -102,9 +107,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
-	if m.output.err != nil {
-		return fmt.Sprintf("\nCould not start selected option: %v\n\n%s", m.output.err, m.output.std)
-	}
 	b := new(strings.Builder)
 	fmt.Fprintf(b, "untitled-dm v%s\n\nWhat should we do?\nPress space to select. Press enter to confirm selection.\n\n", version)
 	for i, choice := range m.choices {
@@ -118,7 +120,11 @@ func (m model) View() string {
 		}
 		fmt.Fprintf(b, "%s [%s] %s\n", cursor, checked, choice)
 	}
-	fmt.Fprintf(b, "\nPress q to quit.\n%s", m.output.std)
+	tail := m.output.std
+	if m.output.err != nil {
+		tail = fmt.Sprintf("\nCould not start selected option: %v\n", m.output.err)
+	}
+	fmt.Fprintf(b, "\nPress q to quit.\n\n%s", tail)
 	return b.String()
 }
 
@@ -129,7 +135,7 @@ func runShCmd(cmd *exec.Cmd) tea.Cmd {
 		}
 		o, err := cmd.CombinedOutput()
 		if err != nil {
-			return errorMsg{output: string(o), err: err}
+			return errorMsg{fmt.Sprintf("%v\n\n%s", err, o)}
 		}
 		return ranMsg{string(o)}
 	}
@@ -140,24 +146,51 @@ func parseTomlConfig(f string) (conf config) {
 		return conf
 	}
 	if _, err := toml.DecodeFile(f, &conf); err != nil {
-		log.Fatal(err)
+		log.Fatal("Could not decode config file: ", err)
 	}
 	return conf
 }
 
-func main() {
-	var versionFlag = flag.Bool("V", false, "Print program version and exit")
-	var confFlag = flag.String("c", "config.toml", "Path to configuration file")
+type int16Var int16
+
+func (i *int16Var) Set(s string) error {
+	x, err := strconv.ParseInt(s, 10, 16)
+	*i = int16Var(x)
+	return err
+}
+
+func (i *int16Var) String() string {
+	return strconv.FormatInt(int64(*i), 10)
+}
+
+func getFlags() (flags struct {
+	version          bool
+	quitOnError      bool
+	confFile         string
+	defaultSelection int
+}) {
+	flags.defaultSelection = -1
+	flag.BoolVar(&flags.version, "V", false, "Print program version and exit")
+	flag.BoolVar(&flags.quitOnError, "q", false, "Quit on command error")
+	flag.StringVar(&flags.confFile, "c", "config.toml", "Path to configuration file")
+	flag.IntVar(&flags.defaultSelection, "d", -1, "Index to default selection. No selection if negative")
+	// flag.Var(&flags.defaultSelection, "d", "Index to default selection")
 	flag.Parse()
-	if *versionFlag {
+	return flags
+}
+
+func main() {
+	flags := getFlags()
+	if flags.version {
 		fmt.Printf("%s v%s\n", os.Args[0], version)
 		os.Exit(0)
 	}
-	conf := parseTomlConfig(*confFlag)
+	conf := parseTomlConfig(flags.confFile)
 	m := model{
-		choices:  make([]string, len(conf.Commands)),
-		cmds:     make(map[int]command),
-		selected: -1,
+		choices:     make([]string, len(conf.Commands)),
+		cmds:        make(map[int]command, len(conf.Commands)),
+		quitOnError: flags.quitOnError,
+		selected:    flags.defaultSelection,
 	}
 	for i, c := range conf.Commands {
 		m.choices[i] = c.Name
