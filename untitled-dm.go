@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -19,7 +20,7 @@ type (
 	model struct {
 		// choices is the list of choices that the user can choose from.
 		choices []string
-		// cmds maps indices in choices to executables to run.
+		// cmds maps indices in choices to commands to run.
 		cmds        map[int]command
 		quitOnError bool
 		// output contains the combined standard streams of the command and any error that occurred
@@ -46,7 +47,7 @@ type (
 	}
 	// ranMsg indicates that the command successfully completed
 	ranMsg struct{ output string }
-	// errorMsg indicates that the command did not successfully complete. Implements error
+	// errorMsg indicates that the command did not successfully complete. Implements [error]
 	errorMsg struct{ output string }
 )
 
@@ -122,7 +123,7 @@ func (m model) View() string {
 	return b.String()
 }
 
-func (m model) addCommands(commands []command, offset int) model {
+func (m model) AddCommands(commands []command, offset int) model {
 	for i, c := range commands {
 		m.choices[i+offset] = c.Name
 		if c.Command != "" {
@@ -155,14 +156,39 @@ func parseTomlConfig(f string) (conf config) {
 	return conf
 }
 
+func getShellArgs(argString string) (args []string) {
+	for i := 0; i < len(argString)-1; {
+		c := argString[i]
+		if c == '"' {
+			nextQuote := strings.Index(argString[i+1:], `"`) + i + 1
+			args = append(args, argString[i+1:nextQuote])
+			i = nextQuote + 1
+		} else if c != ' ' {
+			nextSpace := strings.Index(argString[i:], " ") + i
+			if nextSpace < i { // strings.Index returned -1, i.e. this is last arg
+				nextSpace = len(argString)
+			}
+			args = append(args, argString[i:nextSpace])
+			i = nextSpace
+		} else {
+			i++
+		}
+	}
+	return args
+}
+
 type commandsValue []command
 
 func (i *commandsValue) String() string { return fmt.Sprint(*i) }
 
 func (i *commandsValue) Set(s string) error {
 	name, commandAndArgs, _ := strings.Cut(s, "=")
-	cmd, argsString, _ := strings.Cut(commandAndArgs, " ")
-	*i = append(*i, command{Name: name, Command: cmd, Args: strings.Split(argsString, " ")})
+	cmd, argString, _ := strings.Cut(commandAndArgs, " ")
+	if strings.Count(argString, `"`)%2 != 0 {
+		return errorMsg{"Must match all quotations in command arguments"}
+	}
+	args := getShellArgs(argString)
+	*i = append(*i, command{Name: name, Command: cmd, Args: args})
 	return nil
 }
 
@@ -174,10 +200,10 @@ func getFlags() (flags struct {
 	extraCommands    commandsValue
 }) {
 	flag.BoolVar(&flags.version, "V", false, "Print program version and exit")
-	flag.BoolVar(&flags.quitOnError, "q", false, "Quit on command error")
+	flag.BoolVar(&flags.quitOnError, "q", false, "Quit when a command fails")
 	flag.StringVar(&flags.confFile, "c", "config.toml", "Path to configuration file")
 	flag.IntVar(&flags.defaultSelection, "d", -1, "Default `index` for selection. No selection if negative")
-	flag.Var(&flags.extraCommands, "e", "Extra `command`s to include of the format:\nNAME=COMMAND ARGS...\nCan be provided multiple times")
+	flag.Var(&flags.extraCommands, "e", "Extra `command`s to include of the format:\nNAME=[COMMAND] [ARGS]...\nSurround arguments with spaces with double quotes.\nCan be provided multiple times")
 	flag.Parse()
 	return flags
 }
@@ -194,7 +220,7 @@ func main() {
 		cmds:        make(map[int]command, len(conf.Commands)+len(flags.extraCommands)),
 		quitOnError: flags.quitOnError,
 		selected:    flags.defaultSelection,
-	}.addCommands(flags.extraCommands, 0).addCommands(conf.Commands, len(flags.extraCommands))
+	}.AddCommands(flags.extraCommands, 0).AddCommands(conf.Commands, len(flags.extraCommands))
 	p := tea.NewProgram(m)
 	_, err := p.Run()
 	if err != nil {
