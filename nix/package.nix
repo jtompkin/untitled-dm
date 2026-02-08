@@ -4,7 +4,7 @@
 }:
 buildGoModule {
   pname = "untitled-dm";
-  version = "0.0.1";
+  version = "1.0.0";
   src = lib.fileset.toSource {
     root = ../.;
     fileset = lib.fileset.difference ../. ../nix;

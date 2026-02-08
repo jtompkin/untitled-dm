@@ -13,7 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-const version = "0.0.1"
+const version = "1.0.0"
 
 type (
 	// model implements [tea.Model]
