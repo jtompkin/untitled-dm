@@ -15,14 +15,14 @@
     {
       packages = forAllSystems (
         system: pkgs: {
-          untitled-wm = pkgs.callPackage ./nix/package.nix { };
+          untitled-dm = pkgs.callPackage ./nix/package.nix { };
           default = self.packages.${system}.untitled-wm;
         }
       );
       devShells = forAllSystems (
         system: pkgs: {
           default = pkgs.mkShell {
-            name = "untitled-wm";
+            name = "untitled-dm";
             packages = [
               pkgs.go
               pkgs.gopls
