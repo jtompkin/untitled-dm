@@ -7,6 +7,7 @@ static_build := "yes"
 
 build:
     CGO_ENABLED={{ if static_build == "yes" { "0" } else { "1" } }} go build -o bin ./... 
+    GOOS=windows go build -o bin ./...
 
 check-version:
     [[ $(./bin/untitled-dm -V | cut -d' ' -f2) = v{{ version }} ]]
